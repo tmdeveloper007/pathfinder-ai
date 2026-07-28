@@ -43,9 +43,13 @@ vi.mock("@/lib/ai/gemini", () => ({
   generateGeminiContent: mocks.generateGeminiContent,
 }));
 
-vi.mock("@/lib/ai/prompt-safety.js", () => ({
-  buildSecurePrompt: mocks.buildSecurePrompt,
-}));
+vi.mock("@/lib/ai/prompt-safety", async () => {
+  const actual = await import("@/lib/ai/prompt-safety");
+  return {
+    ...actual,
+    buildSecurePrompt: mocks.buildSecurePrompt,
+  };
+});
 
 vi.mock("@/lib/ai/validate.js", async () => {
   const actual = await vi.importActual("@/lib/ai/validate.js");

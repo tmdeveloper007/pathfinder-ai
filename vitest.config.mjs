@@ -20,7 +20,6 @@ export default defineConfig({
     exclude: ["tests/e2e/**"],
     restoreMocks: true,
     clearMocks: true,
-    mockReset: true,
     testTimeout: 30000,
     env: {
       NODE_ENV: "test",

@@ -1,5 +1,6 @@
 "use server";
 import { handleServerError } from "@/lib/errors/error-handler";
+import { createErrorResponse } from "@/lib/action-helpers/action-errors";
 
 import { db } from "@/lib/db/prisma";
 import { getUserByClerkId } from "@/lib/auth/user";
@@ -68,6 +69,7 @@ export async function updateUserSettings(data) {
     }
 
     const user = await getUserByClerkId(userId);
+    if (!user) return createErrorResponse("User not found");
     const settingsData = validation.data;
 
     const settings = await db.userSettings.upsert({
@@ -102,6 +104,7 @@ export async function updateAccessibilitySettings(data) {
     }
 
     const user = await getUserByClerkId(userId);
+    if (!user) return createErrorResponse("User not found");
     const settingsData = validation.data;
 
     const settings = await db.userSettings.upsert({

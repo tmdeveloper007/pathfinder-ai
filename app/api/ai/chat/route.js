@@ -1,6 +1,5 @@
 import { auth } from "@clerk/nextjs/server";
 import { generateGeminiContentStream } from "@/lib/ai/gemini";
-import { db } from "@/lib/db/prisma";
 import {
   getRateLimitIdentifier,
   enforceRateLimit,
@@ -8,6 +7,8 @@ import {
 } from "@/lib/security/rate-limit";
 
 export async function POST(req) {
+  let abortController = null;
+
   try {
     const authResult = await auth();
     const userId = authResult?.userId;
@@ -15,9 +16,10 @@ export async function POST(req) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
 
+    const subject = getRateLimitIdentifier(req, userId);
     const rateLimitResult = await enforceRateLimit({
-      endpoint: "ai/chat",
-      subject: getRateLimitIdentifier(req, userId),
+      endpoint: "/api/ai/chat",
+      subject,
       limitPerMinute: 10,
       burstCapacity: 10,
     });
@@ -26,6 +28,7 @@ export async function POST(req) {
       return buildRateLimitResponse({
         message: "Too many requests. Please wait before sending another message.",
         retryAfterSeconds: rateLimitResult.retryAfterSeconds,
+        sse: false,
       });
     }
 
@@ -39,7 +42,7 @@ export async function POST(req) {
       return new Response(JSON.stringify({ error: "Messages array is required" }), { status: 400 });
     }
 
-    const isValidMessages = messages.every(msg => 
+    const isValidMessages = messages.every(msg =>
       msg && typeof msg.content === 'string' && (msg.role === 'user' || msg.role === 'assistant')
     );
 
@@ -74,13 +77,28 @@ Guidelines:
       contents: [...geminiHistory, latestMessage]
     };
 
+    // Use AbortController so that when the client disconnects (req.signal fires),
+    // the AI streaming call is aborted immediately, freeing up server resources.
+    abortController = new AbortController();
+
+    // Forward the client disconnect signal to abort the AI streaming call.
+    if (req.signal.aborted) {
+      abortController.abort();
+    } else {
+      req.signal.addEventListener('abort', () => abortController.abort(), { once: true });
+    }
+
     const encoder = new TextEncoder();
-    const result = await generateGeminiContentStream(fullPrompt, { signal: req.signal });
+    const result = await generateGeminiContentStream(fullPrompt, { signal: abortController.signal });
 
     const stream = new ReadableStream({
       async start(controller) {
         try {
           for await (const chunk of result.stream) {
+            // If the client has disconnected, abort the AI call and stop iterating.
+            if (abortController.signal.aborted) {
+              break;
+            }
             const chunkText = chunk.text();
             if (chunkText) {
               controller.enqueue(encoder.encode(chunkText));
@@ -88,8 +106,20 @@ Guidelines:
           }
           controller.close();
         } catch (error) {
+          // Suppress expected abort errors — these are normal when client disconnects.
+          if (error.name === 'AbortError' || abortController.signal.aborted) {
+            controller.close();
+            return;
+          }
           console.error("Stream error:", error);
           controller.error(error);
+        }
+      },
+      cancel() {
+        // Called when the consumer (client) cancels the stream.
+        // Abort the AI call to free server resources immediately.
+        if (abortController && !abortController.signal.aborted) {
+          abortController.abort();
         }
       }
     });

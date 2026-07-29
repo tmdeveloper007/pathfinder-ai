@@ -71,6 +71,12 @@ jobs:
         DATABASE_URL: postgresql://test:test@localhost:5432/test
     - name: Lint
       run: npm run lint
+    - name: Run database migrations
+      run: |
+        PGPASSWORD=test psql -h localhost -U test -d postgres -c "CREATE DATABASE test;" 2>/dev/null || true
+        npx prisma migrate deploy
+      env:
+        DATABASE_URL: postgresql://test:test@localhost:5432/test
     - run: npx playwright install --with-deps chromium
     - name: Run tests
       run: npm run test:unit

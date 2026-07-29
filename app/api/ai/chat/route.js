@@ -1,13 +1,10 @@
 import { auth } from "@clerk/nextjs/server";
 import { generateGeminiContentStream } from "@/lib/ai/gemini";
-import { db } from "@/lib/db/prisma";
-
-// Note: in-memory rate limit resets on every cold start and doesn't work across
-// serverless instances. For production, consider using the shared enforceRateLimit
-// from lib/security/rate-limit.js which uses a persistent store.
-const rateLimitMap = new Map();
+import { enforceRateLimit, getRateLimitIdentifier, buildRateLimitResponse } from "@/lib/security/rate-limit";
 
 export async function POST(req) {
+  let abortController = null;
+
   try {
     const authResult = await auth();
     const userId = authResult?.userId;
@@ -15,24 +12,21 @@ export async function POST(req) {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401 });
     }
 
-    const now = Date.now();
-    const rateData = rateLimitMap.get(userId) || { count: 0, resetTime: now + 60000 };
-    if (now > rateData.resetTime) {
-      rateData.count = 1;
-      rateData.resetTime = now + 60000;
-    } else {
-      rateData.count++;
-      if (rateData.count > 10) {
-        return new Response(JSON.stringify({
-          error: "Too many requests. Please wait before sending another message.",
-          retryAfter: Math.ceil((rateData.resetTime - now) / 1000),
-        }), {
-          status: 429,
-          headers: { "Retry-After": String(Math.ceil((rateData.resetTime - now) / 1000)) },
-        });
-      }
+    const subject = getRateLimitIdentifier(req, userId);
+    const rateLimitResult = await enforceRateLimit({
+      endpoint: "/api/ai/chat",
+      subject,
+      limitPerMinute: 10,
+      burstCapacity: 10,
+    });
+
+    if (!rateLimitResult.allowed) {
+      return buildRateLimitResponse({
+        message: "Too many requests. Please wait before sending another message.",
+        retryAfterSeconds: rateLimitResult.retryAfterSeconds,
+        sse: false,
+      });
     }
-    rateLimitMap.set(userId, rateData);
 
     const body = await req.json();
     let { messages, currentPage, userRole } = body;
@@ -44,7 +38,7 @@ export async function POST(req) {
       return new Response(JSON.stringify({ error: "Messages array is required" }), { status: 400 });
     }
 
-    const isValidMessages = messages.every(msg => 
+    const isValidMessages = messages.every(msg =>
       msg && typeof msg.content === 'string' && (msg.role === 'user' || msg.role === 'assistant')
     );
 
@@ -79,13 +73,28 @@ Guidelines:
       contents: [...geminiHistory, latestMessage]
     };
 
+    // Use AbortController so that when the client disconnects (req.signal fires),
+    // the AI streaming call is aborted immediately, freeing up server resources.
+    abortController = new AbortController();
+
+    // Forward the client disconnect signal to abort the AI streaming call.
+    if (req.signal.aborted) {
+      abortController.abort();
+    } else {
+      req.signal.addEventListener('abort', () => abortController.abort(), { once: true });
+    }
+
     const encoder = new TextEncoder();
-    const result = await generateGeminiContentStream(fullPrompt, { signal: req.signal });
+    const result = await generateGeminiContentStream(fullPrompt, { signal: abortController.signal });
 
     const stream = new ReadableStream({
       async start(controller) {
         try {
           for await (const chunk of result.stream) {
+            // If the client has disconnected, abort the AI call and stop iterating.
+            if (abortController.signal.aborted) {
+              break;
+            }
             const chunkText = chunk.text();
             if (chunkText) {
               controller.enqueue(encoder.encode(chunkText));
@@ -93,8 +102,20 @@ Guidelines:
           }
           controller.close();
         } catch (error) {
+          // Suppress expected abort errors — these are normal when client disconnects.
+          if (error.name === 'AbortError' || abortController.signal.aborted) {
+            controller.close();
+            return;
+          }
           console.error("Stream error:", error);
           controller.error(error);
+        }
+      },
+      cancel() {
+        // Called when the consumer (client) cancels the stream.
+        // Abort the AI call to free server resources immediately.
+        if (abortController && !abortController.signal.aborted) {
+          abortController.abort();
         }
       }
     });

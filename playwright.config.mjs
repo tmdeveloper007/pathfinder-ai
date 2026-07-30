@@ -12,7 +12,9 @@ export default defineConfig({
     trace: "on-first-retry",
   },
   webServer: {
-    command: isCI ? "npm run start -- --port 3000" : "npm run dev -- --port 3000 -H 127.0.0.1",
+    command: isCI
+      ? "DATABASE_URL=postgresql://test:test@localhost:5432/test npm run start -- --port 3000"
+      : "npm run dev -- --port 3000 -H 127.0.0.1",
     url: "http://127.0.0.1:3000",
     reuseExistingServer: !isCI,
     timeout: 180000,
@@ -20,7 +22,6 @@ export default defineConfig({
     stderr: "pipe",
     env: {
       NODE_ENV: isCI ? "production" : "development",
-      DATABASE_URL: isCI ? "postgresql://test:test@localhost:5432/test" : undefined,
     },
   },
 });

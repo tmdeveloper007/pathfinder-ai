@@ -54,6 +54,7 @@ const actionMocks = vi.hoisted(() => ({
   findUnique: vi.fn(),
   imposterSyndromeCreate: vi.fn(),
   generateGeminiContent: vi.fn(),
+  checkRateLimit: vi.fn(),
 }));
 
 vi.mock("@clerk/nextjs/server", () => ({
@@ -73,6 +74,11 @@ vi.mock("@/lib/db/prisma", () => ({
 
 vi.mock("@/lib/ai/gemini", () => ({
   generateGeminiContent: actionMocks.generateGeminiContent,
+}));
+
+vi.mock("@/lib/security/rate-limit-actions", () => ({
+  checkRateLimit: actionMocks.checkRateLimit,
+  formatResetTime: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({
@@ -105,6 +111,7 @@ describe("reframeThoughts", () => {
       },
     });
     actionMocks.imposterSyndromeCreate.mockResolvedValue({ id: "imposter-1" });
+    actionMocks.checkRateLimit.mockResolvedValue({ allowed: true, remaining: 9, retryAfterSeconds: 0 });
 
     const result = await reframeThoughts("I am a fraud", "I built an app");
 

@@ -19,8 +19,8 @@ export default defineConfig({
     stdout: "pipe",
     stderr: "pipe",
     env: {
-      NODE_ENV: "development",
-      CI: "",
+      NODE_ENV: isCI ? "production" : "development",
+      DATABASE_URL: isCI ? "postgresql://test:test@localhost:5432/test" : undefined,
     },
   },
 });

@@ -27,7 +27,12 @@ COPY --from=deps /app/prisma ./prisma
 
 COPY . .
 
+# Ensure all transitive deps (incl. commondir) are installed in Docker build context
+# Fixes: "Cannot find module 'commondir'" during npm run build in CI
+RUN npm ci --legacy-peer-deps
+
 ENV BUILD_STANDALONE="true"
+ENV NODE_OPTIONS="--max-old-space-size=3072"
 RUN npm run build
 
 # Stage 4: Production runner

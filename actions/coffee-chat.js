@@ -14,16 +14,6 @@ export async function startCoffeeChat(industry, targetRole) {
     return { success: false, errors: { _form: ["Unauthorized"] } };
   }
 
-  const limit = await checkRateLimit(userId, "coffeeChat");
-  if (!limit.allowed) {
-    return {
-      success: false,
-      errors: {
-        _form: [`Coffee Chat limit reached. Resets in ${formatResetTime(limit.resetAt)}.`],
-      },
-    };
-  }
-
   const user = await db.user.findUnique({
     where: { clerkUserId: userId },
   });
@@ -44,6 +34,16 @@ export async function startCoffeeChat(industry, targetRole) {
     return {
       success: false,
       errors: { _form: ["Industry and target role must be under 200 characters."] },
+    };
+  }
+
+  const limit = await checkRateLimit(userId, "coffeeChat");
+  if (!limit.allowed) {
+    return {
+      success: false,
+      errors: {
+        _form: [`Coffee Chat limit reached. Resets in ${formatResetTime(limit.resetAt)}.`],
+      },
     };
   }
 

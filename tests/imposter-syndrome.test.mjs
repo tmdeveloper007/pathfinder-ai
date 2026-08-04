@@ -76,17 +76,13 @@ vi.mock("@/lib/ai/gemini", () => ({
   generateGeminiContent: actionMocks.generateGeminiContent,
 }));
 
-vi.mock("@/lib/security/rate-limit-actions.js", () => ({
+vi.mock("@/lib/security/rate-limit-actions", () => ({
   checkRateLimit: actionMocks.checkRateLimit,
+  formatResetTime: vi.fn(),
 }));
 
 vi.mock("next/cache", () => ({
   revalidatePath: vi.fn(),
-}));
-
-vi.mock("@/lib/security/rate-limit-actions", () => ({
-  checkRateLimit: actionMocks.checkRateLimit,
-  formatResetTime: vi.fn(),
 }));
 
 describe("reframeThoughts", () => {
@@ -116,7 +112,7 @@ describe("reframeThoughts", () => {
       },
     });
     actionMocks.imposterSyndromeCreate.mockResolvedValue({ id: "imposter-1" });
-    actionMocks.checkRateLimit.mockResolvedValue({ allowed: true, remaining: 9, resetAt: new Date() });
+    actionMocks.checkRateLimit.mockResolvedValue({ allowed: true, remaining: 9, retryAfterSeconds: 0 });
 
     const result = await reframeThoughts("I am a fraud", "I built an app");
 

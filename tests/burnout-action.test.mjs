@@ -13,23 +13,20 @@ vi.mock("@clerk/nextjs/server", () => ({
   auth: mocks.auth,
 }));
 
-// Mock the db with ALL methods that any tested code path might call
-vi.mock("@/lib/db/prisma", async () => {
-  const actual = await vi.importActual("@/lib/db/prisma");
-  return {
-    ...actual,
-    db: {
-      user: {
-        findUnique: mocks.findUniqueUser,
-      },
-      burnoutAssessment: {
-        create: mocks.burnoutAssessmentCreate,
-      },
-      // Include $queryRaw to avoid TypeError when rate-limit-actions uses it
-      $queryRaw: vi.fn(),
+// Provide complete db mock including all Prisma methods to avoid breaking
+// other code that uses db directly (like checkRateLimit via $queryRaw)
+vi.mock("@/lib/db/prisma", () => ({
+  db: {
+    user: {
+      findUnique: mocks.findUniqueUser,
     },
-  };
-});
+    burnoutAssessment: {
+      create: mocks.burnoutAssessmentCreate,
+    },
+    $queryRaw: vi.fn(),
+    $executeRaw: vi.fn(),
+  },
+}));
 
 vi.mock("@/lib/ai/gemini", () => ({
   generateGeminiContent: mocks.generateGeminiContent,

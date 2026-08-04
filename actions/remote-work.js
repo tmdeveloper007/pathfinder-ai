@@ -15,7 +15,7 @@ export async function generateRemotePitch(role, reasons, objections) {
   const user = await db.user.findUnique({ where: { clerkUserId: userId } });
   if (!user) return createErrorResponse("User not found");
 
-  if (!role || !reasons) {
+  if (!role?.trim() || !reasons?.trim()) {
     return { success: false, errors: { _form: ["Role and reasons are required."] } };
   }
 
